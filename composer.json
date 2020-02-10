@@ -1,0 +1,26 @@
+{
+    "name": "azonmedia/translator",
+    "type": "library",
+    "description": "Translator",
+    "keywords": ["translator"],
+    "homepage": "https://github.com/AzonMedia/translator",
+    "license": "BSD-3-Clause",
+    "authors": [
+        {
+            "name": "Vesko Kenashkov",
+            "email": "kenashkov@azonmedia.com",
+            "homepage": "http://azonmedia.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": ">=7.2.0",
+        "azonmedia/packages": "dev-master",
+        "azonmedia/components": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {
+            "Azonmedia\\Translator\\": "src/"
+        }
+    }
+}
