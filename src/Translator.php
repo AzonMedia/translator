@@ -51,20 +51,27 @@ abstract class Translator
      */
     private static int $total_messages = 0;
 
+    private static array $supported_languages = [];
+
     /**
      * Initializes the Translator by loading the translations from all packages found in the ./vendor path and any $additional_paths
      * @param string $target_language The target language for the translations (the strings are to be translated to this language). Can be changed at any time @see self::set_target_language()
      * @param string $composer_json_path
      * @param array $packages_filter An array for regexes against which the package names (with vendor name) will be matched. Non-matched packages will not be checked for translations.
      * @param array $additional_paths An array of directories where translations files should be loaded too. It can be an indexed array or associative array package-name => translations-dir
+     * @param array $supported_languages An array of the languages that are to be loaded during the initialization.
      * @throws RunTimeException
      */
-    public static function initialize(string $target_language, string $composer_json_path = '', array $packages_filter = [], array $additional_paths = []) : void
+    public static function initialize(string $target_language, string $composer_json_path = '', array $packages_filter = [], array $additional_paths = [], array $supported_languages = []) : void
     {
         if (self::is_initialized()) {
             return;
         }
         self::set_target_language($target_language);
+        if ($supported_languages) {
+            self::$supported_languages = $supported_languages;
+        }
+
 
         //get translations from packages
         if (!$composer_json_path) {
@@ -105,7 +112,7 @@ abstract class Translator
                     }
                     $package_translations_path = $package_path.$package_src_path.'translations/';
                     if (file_exists($package_translations_path)) {
-                        self::process_translations_dir($package_translations_path, $Package->getName());
+                        self::process_translations_dir($package_translations_path, $Package->getName(), $supported_languages);
                     }
                 }
             }
@@ -131,7 +138,7 @@ abstract class Translator
 
             //self::process_translations_dir($additional_path);// '_' means additional files, not part of any package under ./vendor
             $package_name = is_string($key) ? $key : '_';// '_' means additional files, not part of any package under ./vendor
-            self::process_translations_dir($additional_path, $package_name);
+            self::process_translations_dir($additional_path, $package_name, $supported_languages);
 //            //check is this path already loaded
 //            foreach (self::$packages as $package) {
 //                foreach ($package['loaded_files'] as $loaded_file) {
@@ -144,6 +151,31 @@ abstract class Translator
         }
 
         self::$is_initialized_flag = TRUE;
+    }
+
+    /**
+     * @param array $supported_languages
+     * @throws InvalidArgumentException
+     */
+    public static function set_supported_languages(array $supported_languages) : void
+    {
+        if (!count($supported_languages)) {
+            throw new InvalidArgumentException(sprintf('An empty array was provided for $supported_languages.'));
+        }
+        foreach ($supported_languages as $key => $supported_language) {
+            if (!is_string($supported_language)) {
+                throw new InvalidArgumentException(sprintf('The %s element of the $supported_languages array is not a string but a %s. The $supported_languages must contain an array of strings.', $key, gettype($supported_language) ));
+            }
+            if (!$supported_language) {
+                throw new InvalidArgumentException(sprintf('The %s element of the $supported_languages array is an empty string. The $supported_languages must contain an array of strings.', $key ));
+            }
+        }
+        self::$supported_languages = $supported_languages;
+    }
+
+    public static function get_supported_languages() : array
+    {
+        return self::$supported_languages;
     }
 
     /**
@@ -204,15 +236,17 @@ abstract class Translator
 //            $message = sprintf('An error %s ocurred while parsing file %s.', $Exception->getCode(), $translation_file);
 //            throw new RunTimeException($message);
 //        }
+
         $Json = json_decode(file_get_contents($translation_file));
         if ($Json === NULL) {
             $message = sprintf('An error "%s" ocurred while parsing file %s.', json_last_error_msg(), $translation_file);
             throw new RunTimeException($message);
         }
 
+        $supported_languages = self::get_supported_languages();
         foreach ($Json->translations as $Translation) {
-            foreach ($Translation as $lang => $message) {
-                if ($lang === $Json->source_language) {
+            foreach ($Translation as $language => $message) {
+                if ($language === $Json->source_language) {
                     $message_key = $message;
                 }
             }
@@ -220,9 +254,12 @@ abstract class Translator
                 $message = sprintf('The message %s in file %s does not contain translation for the source language "%s".', print_r($Translation, TRUE), $translation_file, $Json->source_language);
                 throw new RunTimeException($message, 0, NULL, '30d75308-8a23-4a10-85ea-159f2cfaeef7');
             }
-            foreach ($Translation as $lang => $message) {
+            foreach ($Translation as $language => $message) {
+                if ($supported_languages && !in_array($language, $supported_languages, TRUE)) {
+                    continue;//do not load this language as it will not be used
+                }
                 //keep the $message_key in the translation as well - this identifies which is the source language
-                self::$translations[$message_key][$lang] = $message;
+                self::$translations[$message_key][$language] = $message;
             }
         }
         return count($Json->translations);
@@ -258,12 +295,18 @@ abstract class Translator
     /**
      * Sets the current target language.
      * Coroutine aware.
+     * @see self::get_supported_languages()
      * @param string $target_language
+     * @return void
      */
     public static function set_target_language(string $target_language) : void
     {
         if (!$target_language) {
             throw new RunTimeException(sprintf('No target language language is provided.'));
+        }
+        $supported_languages = self::get_supported_languages();
+        if ($supported_languages && !in_array($target_language, $supported_languages, TRUE)) {
+            throw new InvalidArgumentException(sprintf('The provided $target_language "%s" is not in the supported languages "%s".', $target_language, implode(', ', $supported_languages) ));
         }
         if (class_exists(\Swoole\Coroutine::class) && \Swoole\Coroutine::getCid() > 0) {
             $Context = \Swoole\Coroutine::getContext();
@@ -274,7 +317,6 @@ abstract class Translator
         } else {
             self::$target_language = $target_language;
         }
-
     }
 
     /**
