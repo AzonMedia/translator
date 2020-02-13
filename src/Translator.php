@@ -7,8 +7,6 @@ use Azonmedia\Exceptions\InvalidArgumentException;
 use Azonmedia\Exceptions\RunTimeException;
 use Azonmedia\Packages\Packages;
 
-//TODO - add an option to the argument to filter the loaded languages - there may be too many unnecessary translations
-
 /**
  * Class Translator
  * @package Azonmedia\Translator
