@@ -1,0 +1,5 @@
+# Error Reference
+- [30d75308-8a23-4a10-85ea-159f2cfaeef7](./30d75308-8a23-4a10-85ea-159f2cfaeef7)
+- [315eb4d5-b315-4c4e-bda3-9772440e6ba1](./315eb4d5-b315-4c4e-bda3-9772440e6ba1)
+- [85949112-d35d-4bf9-ae31-d39704fbec1b](./85949112-d35d-4bf9-ae31-d39704fbec1b)
+- [bd89bcf0-3786-4d5e-a378-d2b1a746ec7c](./bd89bcf0-3786-4d5e-a378-d2b1a746ec7c)

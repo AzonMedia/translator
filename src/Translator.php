@@ -7,6 +7,8 @@ use Azonmedia\Exceptions\InvalidArgumentException;
 use Azonmedia\Exceptions\RunTimeException;
 use Azonmedia\Packages\Packages;
 
+//TODO - add an option to the argument to filter the loaded languages - there may be too many unnecessary translations
+
 /**
  * Class Translator
  * @package Azonmedia\Translator
@@ -22,7 +24,7 @@ abstract class Translator
      * In coroutine context the target language will be set in the coroutine
      * @var string
      */
-    private static ?string $target_language = NULL;
+    private static string $target_language;
 
     /**
      * @var bool
@@ -43,20 +45,26 @@ abstract class Translator
      */
     private static array $packages = [];
 
-    private static int $total_translations = 0;
+    /**
+     * The total number of loaded messages (with translations).
+     * @var int
+     */
+    private static int $total_messages = 0;
 
     /**
      * Initializes the Translator by loading the translations from all packages found in the ./vendor path and any $additional_paths
+     * @param string $target_language The target language for the translations (the strings are to be translated to this language). Can be changed at any time @see self::set_target_language()
      * @param string $composer_json_path
      * @param array $packages_filter An array for regexes against which the package names (with vendor name) will be matched. Non-matched packages will not be checked for translations.
-     * @param array $additional_paths An array of directories where translations files should be loaded too
+     * @param array $additional_paths An array of directories where translations files should be loaded too. It can be an indexed array or associative array package-name => translations-dir
      * @throws RunTimeException
      */
-    public static function initialize(string $composer_json_path = '', array $packages_filter = [], array $additional_paths = []) : void
+    public static function initialize(string $target_language, string $composer_json_path = '', array $packages_filter = [], array $additional_paths = []) : void
     {
         if (self::is_initialized()) {
             return;
         }
+        self::set_target_language($target_language);
 
         //get translations from packages
         if (!$composer_json_path) {
@@ -104,9 +112,9 @@ abstract class Translator
         }
 
         //get the translations from $additional_paths
-        foreach ($additional_paths as $key=>$additional_path) {
+        foreach ($additional_paths as $key => $additional_path) {
             if (!is_string($additional_path)) {
-                $message = sprintf('The %s element of the $additional_paths argument is not a string. Only strings (absolute filesystem paths) are accepted.');
+                $message = sprintf('The %s element of the $additional_paths argument is not a string but a %s. Only strings (absolute filesystem paths) are accepted.', $key, gettype($additional_path) );
                 throw new InvalidArgumentException($message, 0, NULL, '315eb4d5-b315-4c4e-bda3-9772440e6ba1');
             }
             if (!$additional_path) {
@@ -121,20 +129,33 @@ abstract class Translator
                 //not expected but it is not doing any harm either...
             }
 
-            self::process_translations_dir($additional_path, '_');// '_' means additional files, not part of any package under ./vendor
-            //check is this path already loaded
-            foreach (self::$packages as $package) {
-                foreach ($package['loaded_files'] as $loaded_file) {
-                    if ($loaded_file === $additional_path) {
-                        continue 3;
-                    }
-                }
-            }
+            //self::process_translations_dir($additional_path);// '_' means additional files, not part of any package under ./vendor
+            $package_name = is_string($key) ? $key : '_';// '_' means additional files, not part of any package under ./vendor
+            self::process_translations_dir($additional_path, $package_name);
+//            //check is this path already loaded
+//            foreach (self::$packages as $package) {
+//                foreach ($package['loaded_files'] as $loaded_file) {
+//                    if ($loaded_file === $additional_path) {
+//                        continue 3;//already loaded
+//                    }
+//                }
+//            }
 
         }
+
+        self::$is_initialized_flag = TRUE;
     }
 
-    private static function process_translations_dir(string $translations_dir, string $package_name) : void
+    /**
+     * Loads all translation JSON files form the provided directory $translations_dir.
+     * The $package_name is used for reporting, not for the actual translation process.
+     * If the translation directory is not part of any package under ./vendor then this argument can be omitted.
+     * @param string $translations_dir
+     * @param string $package_name
+     * @throws InvalidArgumentException
+     * @throws RunTimeException
+     */
+    private static function process_translations_dir(string $translations_dir, string $package_name = '_') : void
     {
         if (!$translations_dir) {
             $message = sprintf('The provided $translations_dir argument is empty.');
@@ -166,7 +187,7 @@ abstract class Translator
             'loaded_files'          => $translation_files,
             'loaded_translations'   => $cnt_translations,
         ];
-        self::$total_translations += $cnt_translations;
+        self::$total_messages += $cnt_translations;
 
     }
 
@@ -177,7 +198,18 @@ abstract class Translator
      */
     private static function load_translations_from_file(string $translation_file) : int
     {
-        $Json = json_decode(file_get_contents($translation_file), FALSE, 512, JSON_THROW_ON_ERROR);
+//        try {
+//            $Json = json_decode(file_get_contents($translation_file), FALSE, 512, JSON_THROW_ON_ERROR);
+//        } catch (\JsonException $Exception) {
+//            $message = sprintf('An error %s ocurred while parsing file %s.', $Exception->getCode(), $translation_file);
+//            throw new RunTimeException($message);
+//        }
+        $Json = json_decode(file_get_contents($translation_file));
+        if ($Json === NULL) {
+            $message = sprintf('An error "%s" ocurred while parsing file %s.', json_last_error_msg(), $translation_file);
+            throw new RunTimeException($message);
+        }
+
         foreach ($Json->translations as $Translation) {
             foreach ($Translation as $lang => $message) {
                 if ($lang === $Json->source_language) {
@@ -196,6 +228,10 @@ abstract class Translator
         return count($Json->translations);
     }
 
+    /**
+     * Checks is the Translator initialized (@see self::initialize())
+     * @return bool
+     */
     public static function is_initialized() : bool
     {
         return self::$is_initialized_flag;
@@ -211,18 +247,24 @@ abstract class Translator
     }
 
     /**
+     * Returns the total number of individual translations found
      * @return int
      */
-    public static function get_loaded_translations_count() : int
+    public static function get_loaded_messages_count() : int
     {
-        return self::$total_translations;
+        return self::$total_messages;
     }
 
     /**
+     * Sets the current target language.
+     * Coroutine aware.
      * @param string $target_language
      */
     public static function set_target_language(string $target_language) : void
     {
+        if (!$target_language) {
+            throw new RunTimeException(sprintf('No target language language is provided.'));
+        }
         if (class_exists(\Swoole\Coroutine::class) && \Swoole\Coroutine::getCid() > 0) {
             $Context = \Swoole\Coroutine::getContext();
             if (!isset($Context->{self::class})) {
@@ -236,15 +278,19 @@ abstract class Translator
     }
 
     /**
-     * @return string|null
+     * Returns the current target language.
+     * Coroutine aware.
+     * @return string
      */
-    public static function get_target_language() : ?string
+    public static function get_target_language() : string
     {
         $ret = NULL;
         if (class_exists(\Swoole\Coroutine::class) && \Swoole\Coroutine::getCid() > 0) {
             $Context = \Swoole\Coroutine::getContext();
             if (isset($Context->{self::class}->target_language)) {
                 $ret = $Context->{self::class}->target_language;
+            } else {
+                $ret = self::$target_language;//fall back
             }
         } else {
             $ret = self::$target_language;
@@ -253,9 +299,12 @@ abstract class Translator
     }
 
     /**
-     * @param string $text
-     * @param null $target_language
-     * @return string
+     * Translates the provided $text to the $target_language.
+     * If the $target_language is not provided self::get_target_language() is used.
+     * If no translation is found the $text is returned unmodified.
+     * @param string $text The text to be translated
+     * @param null|string $target_language The language to whcih the text is to be translated
+     * @return string The translated text
      */
     public static function _(string $text, ?string $target_language = NULL) : string
     {
