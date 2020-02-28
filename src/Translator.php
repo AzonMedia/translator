@@ -49,6 +49,12 @@ abstract class Translator
      */
     private static int $total_messages = 0;
 
+    /**
+     * A list of supported languages.
+     * If this is provided to the constructor only these languages will be loaded from the translations.
+     * Also when target language is provided it will be checked against these languages.
+     * @var array
+     */
     private static array $supported_languages = [];
 
     /**
@@ -136,15 +142,8 @@ abstract class Translator
 
             //self::process_translations_dir($additional_path);// '_' means additional files, not part of any package under ./vendor
             $package_name = is_string($key) ? $key : '_';// '_' means additional files, not part of any package under ./vendor
+            //TODO - add check is the path already loaded as part of the packages
             self::process_translations_dir($additional_path, $package_name, $supported_languages);
-//            //check is this path already loaded
-//            foreach (self::$packages as $package) {
-//                foreach ($package['loaded_files'] as $loaded_file) {
-//                    if ($loaded_file === $additional_path) {
-//                        continue 3;//already loaded
-//                    }
-//                }
-//            }
 
         }
 
@@ -354,7 +353,12 @@ abstract class Translator
         if (!$text) {
             return $text;
         }
-        if (!$target_language) {
+        if ($target_language) {
+            $supported_languages = self::get_supported_languages();
+            if ($supported_languages && !in_array($target_language, $supported_languages, TRUE)) {
+                throw new InvalidArgumentException(sprintf('The provided $target_language "%s" is not in the supported languages "%s".', $target_language, implode(', ', $supported_languages) ));
+            }
+        } else {
             $target_language = self::get_target_language();
         }
         if (!$target_language) {
