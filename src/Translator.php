@@ -81,6 +81,7 @@ abstract class Translator
         if (!$composer_json_path) {
             $composer_json_path = Packages::get_application_composer_file_path();
         }
+
         $Packages = new Packages($composer_json_path);
         $installed_packages = $Packages->get_installed_packages();
 
